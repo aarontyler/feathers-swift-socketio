@@ -68,7 +68,16 @@ public final class SocketProvider: Provider {
 
     public func request(endpoint: Endpoint) -> SignalProducer<Response, AnyFeathersError> {
         let emitPath = endpoint.method.socketRequestPath
-        return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData)
+        switch(emitPath) {
+        case "find":
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:])
+        case "get", "remove":
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:], and: endpoint.method.socketData[1] ?? [:])
+        case "create":
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:])
+        default: // patch and update
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:], and: endpoint.method.socketData[1] ?? [:], and: endpoint.method.socketData[2] ?? [:])
+        }
     }
 
     public func authenticate(_ path: String, credentials: [String : Any]) -> SignalProducer<Response, AnyFeathersError> {
@@ -79,7 +88,7 @@ public final class SocketProvider: Provider {
         return emit(to: "logout", with: [])
     }
 
-    /// Emit data to a given path for a given service.
+    /// Emit data to a given path for a given service with data.
     ///
     /// - Parameters:
     ///   - path: Path to emit on.
@@ -100,6 +109,62 @@ public final class SocketProvider: Provider {
                 }
             } else {
                 vSelf.client.emitWithAck(path, service, data).timingOut(after: vSelf.timeout) { data in
+                    vSelf.handleEmitResponse(data: data, observer: observer)
+                }
+            }
+        }
+    }
+    /// Emit data to a given path for a given service with id and query.
+    ///
+    /// - Parameters:
+    ///   - path: Path to emit on.
+    ///   - service: Service to emit to.
+    ///   - id: id of the resource.
+    ///   - query: The associated query.
+    ///   - completion: Completion callback.
+    private func emit(to path: String, for service: String, with id: SocketData, and query: SocketData) -> SignalProducer<Response, AnyFeathersError> {
+        return SignalProducer { [weak self] observer, disposable in
+            guard let vSelf = self else {
+                observer.sendInterrupted()
+                return
+            }
+            if vSelf.client.status == .connecting {
+                vSelf.client.once("connect") { _,_  in
+                    vSelf.client.emitWithAck(path, service, id, query).timingOut(after: vSelf.timeout) { data in
+                        vSelf.handleEmitResponse(data: data, observer: observer)
+                    }
+                }
+            } else {
+                vSelf.client.emitWithAck(path, service, id, query).timingOut(after: vSelf.timeout) { data in
+                    vSelf.handleEmitResponse(data: data, observer: observer)
+                }
+            }
+        }
+    }
+    
+    /// Emit data to a given path for a given service with id, data and query.
+    ///
+    /// - Parameters:
+    ///   - path: Path to emit on.
+    ///   - service: Service to emit to.
+    ///   - id: id of the resource.
+    ///   - data: Data to emit.
+    ///   - query: The associated query.
+    ///   - completion: Completion callback.
+    private func emit(to path: String, for service: String, with id: SocketData, and data: SocketData, and query: SocketData) -> SignalProducer<Response, AnyFeathersError> {
+        return SignalProducer { [weak self] observer, disposable in
+            guard let vSelf = self else {
+                observer.sendInterrupted()
+                return
+            }
+            if vSelf.client.status == .connecting {
+                vSelf.client.once("connect") { _,_  in
+                    vSelf.client.emitWithAck(path, service, id, data, query).timingOut(after: vSelf.timeout) { data in
+                        vSelf.handleEmitResponse(data: data, observer: observer)
+                    }
+                }
+            } else {
+                vSelf.client.emitWithAck(path, service, id, data, query).timingOut(after: vSelf.timeout) { data in
                     vSelf.handleEmitResponse(data: data, observer: observer)
                 }
             }
@@ -240,7 +305,7 @@ fileprivate extension Service.Method {
         case .create: return "create"
         case .update: return "update"
         case .patch: return "patch"
-        case .remove: return "removed"
+        case .remove: return "remove"
         }
     }
 
@@ -250,8 +315,8 @@ fileprivate extension Service.Method {
             return [query?.serialize() ?? [:]]
         case .get(let id, let query):
             return [id, query?.serialize() ?? [:]]
-        case .create(let data, let query):
-            return [data, query?.serialize() ?? [:]]
+        case .create(let data):
+            return [data]
         case .update(let id, let data, let query),
              .patch(let id, let data, let query):
             return [id ?? nil, data, query?.serialize() ?? [:]]
