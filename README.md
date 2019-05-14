@@ -1,5 +1,7 @@
 # FeathersSwiftSocketIO
 
+IMPORTANT NOTE: This repo is a fork to enable Socket IO support with my iOS application, and is coupled with my fork of feathers-swift. See my feathers-swift repo for more details.
+
 [![Carthage compatible](https://img.shields.io/badge/Carthage-compatible-4BC51D.svg?style=flat)](#carthage) [![CocoaPods compatible](https://img.shields.io/cocoapods/v/FeathersSwiftSocketIO.svg)](#cocoapods) [![GitHub release](https://img.shields.io/github/release/feathersjs-ecosystem/feathers-swift-socketio.svg)](https://github.com/feathersjs-ecosystem/feathers-swift-socketio/releases) ![Swift 4.0.x](https://img.shields.io/badge/Swift-4.0.x-orange.svg) ![platforms](https://img.shields.io/badge/platform-iOS%20%7C%20macOS%20%7C%20tvOS%20%7C%20watchOS-lightgrey.svg) [![Build Status](https://travis-ci.org/feathersjs-ecosystem/feathers-swift-socketio.svg?branch=master)](https://travis-ci.org/feathersjs-ecosystem/feathers-swift-socketio)
 
 ## What is FeathersSwiftSocketIO?
