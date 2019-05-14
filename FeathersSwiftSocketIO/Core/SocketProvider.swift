@@ -5,6 +5,7 @@
 //  Created by Brendan Conron on 5/16/17.
 //  Copyright © 2017 FeathersJS. All rights reserved.
 //
+//  Modified by Aaron Tyler September 2018 to support latest Feathers API and watchOS
 
 import SocketIO
 import Foundation
@@ -42,28 +43,28 @@ public final class SocketProvider: Provider {
 
     public func setup(app: Feathers) {
         // Attempt to authenticate using a previously stored token once the client connects.
-        client.once("connect") { [weak app = app, weak self] data, ack in
-            guard let vSelf = self else { return }
-            guard let vApp = app else { return }
-            guard let accessToken = vApp.authenticationStorage.accessToken else { return }
-            vSelf.emit(to: "authenticate", with: [
-                "strategy": vApp.authenticationConfiguration.jwtStrategy,
-                "accessToken": accessToken
-            ])
-                .on(failed: { _ in
-                    vApp.authenticationStorage.accessToken = accessToken
-                }, value: { value in
-                    if case let .object(object) = value.data,
-                        let json = object as? [String: Any],
-                        let accessToken = json["accessToken"] as? String {
-                        vApp.authenticationStorage.accessToken = accessToken
-                    }
-                })
-            .start()
-        }
-        client.connect(timeoutAfter: timeout) {
-            print("feathers socket failed to connect")
-        }
+//        client.once("connect") { [weak app = app, weak self] data, ack in
+//            guard let vSelf = self else { return }
+//            guard let vApp = app else { return }
+//            guard let accessToken = vApp.authenticationStorage.accessToken else { return }
+//            vSelf.emit(to: "authenticate", with: [
+//                "strategy": vApp.authenticationConfiguration.jwtStrategy,
+//                "accessToken": accessToken
+//            ])
+//                .on(failed: { _ in
+//                    vApp.authenticationStorage.accessToken = accessToken
+//                }, value: { value in
+//                    if case let .object(object) = value.data,
+//                        let json = object as? [String: Any],
+//                        let accessToken = json["accessToken"] as? String {
+//                        vApp.authenticationStorage.accessToken = accessToken
+//                    }
+//                })
+//            .start()
+//        }
+//        client.connect(timeoutAfter: timeout) {
+//            print("feathers socket failed to connect")
+//        }
     }
 
     public func request(endpoint: Endpoint) -> SignalProducer<Response, AnyFeathersError> {
@@ -298,7 +299,7 @@ public final class SocketProvider: Provider {
 
 fileprivate extension Service.Method {
 
-    fileprivate var socketRequestPath: String {
+    var socketRequestPath: String {
         switch self {
         case .find: return "find"
         case .get: return "get"
@@ -309,7 +310,7 @@ fileprivate extension Service.Method {
         }
     }
 
-    fileprivate var socketData: [SocketData?] {
+    var socketData: [SocketData?] {
         switch self {
         case .find(let query):
             return [query?.serialize() ?? [:]]
