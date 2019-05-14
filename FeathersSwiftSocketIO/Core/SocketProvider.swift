@@ -5,6 +5,7 @@
 //  Created by Brendan Conron on 5/16/17.
 //  Copyright © 2017 FeathersJS. All rights reserved.
 //
+//  Modified by Aaron Tyler September 2018 to support latest Feathers API and watchOS
 
 import SocketIO
 import Foundation
@@ -42,33 +43,42 @@ public final class SocketProvider: Provider {
 
     public func setup(app: Feathers) {
         // Attempt to authenticate using a previously stored token once the client connects.
-        client.once("connect") { [weak app = app, weak self] data, ack in
-            guard let vSelf = self else { return }
-            guard let vApp = app else { return }
-            guard let accessToken = vApp.authenticationStorage.accessToken else { return }
-            vSelf.emit(to: "authenticate", with: [
-                "strategy": vApp.authenticationConfiguration.jwtStrategy,
-                "accessToken": accessToken
-            ])
-                .on(failed: { _ in
-                    vApp.authenticationStorage.accessToken = accessToken
-                }, value: { value in
-                    if case let .object(object) = value.data,
-                        let json = object as? [String: Any],
-                        let accessToken = json["accessToken"] as? String {
-                        vApp.authenticationStorage.accessToken = accessToken
-                    }
-                })
-            .start()
-        }
-        client.connect(timeoutAfter: timeout) {
-            print("feathers socket failed to connect")
-        }
+//        client.once("connect") { [weak app = app, weak self] data, ack in
+//            guard let vSelf = self else { return }
+//            guard let vApp = app else { return }
+//            guard let accessToken = vApp.authenticationStorage.accessToken else { return }
+//            vSelf.emit(to: "authenticate", with: [
+//                "strategy": vApp.authenticationConfiguration.jwtStrategy,
+//                "accessToken": accessToken
+//            ])
+//                .on(failed: { _ in
+//                    vApp.authenticationStorage.accessToken = accessToken
+//                }, value: { value in
+//                    if case let .object(object) = value.data,
+//                        let json = object as? [String: Any],
+//                        let accessToken = json["accessToken"] as? String {
+//                        vApp.authenticationStorage.accessToken = accessToken
+//                    }
+//                })
+//            .start()
+//        }
+//        client.connect(timeoutAfter: timeout) {
+//            print("feathers socket failed to connect")
+//        }
     }
 
     public func request(endpoint: Endpoint) -> SignalProducer<Response, AnyFeathersError> {
         let emitPath = endpoint.method.socketRequestPath
-        return emit(to: emitPath, with: [endpoint.path] + endpoint.method.socketData)
+        switch(emitPath) {
+        case "find":
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:])
+        case "get", "remove":
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:], and: endpoint.method.socketData[1] ?? [:])
+        case "create":
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:])
+        default: // patch and update
+            return emit(to: emitPath, for: endpoint.path, with: endpoint.method.socketData[0] ?? [:], and: endpoint.method.socketData[1] ?? [:], and: endpoint.method.socketData[2] ?? [:])
+        }
     }
 
     public func authenticate(_ path: String, credentials: [String : Any]) -> SignalProducer<Response, AnyFeathersError> {
@@ -79,6 +89,89 @@ public final class SocketProvider: Provider {
         return emit(to: "logout", with: [])
     }
 
+    /// Emit data to a given path for a given service with data.
+    ///
+    /// - Parameters:
+    ///   - path: Path to emit on.
+    ///   - service: Service to emit to.
+    ///   - data: Data to emit.
+    ///   - completion: Completion callback.
+    private func emit(to path: String, for service: String, with data: SocketData) -> SignalProducer<Response, AnyFeathersError> {
+        return SignalProducer { [weak self] observer, disposable in
+            guard let vSelf = self else {
+                observer.sendInterrupted()
+                return
+            }
+            if vSelf.client.status == .connecting {
+                vSelf.client.once("connect") { _,_  in
+                    vSelf.client.emitWithAck(path, service, data).timingOut(after: vSelf.timeout) { data in
+                        vSelf.handleEmitResponse(data: data, observer: observer)
+                    }
+                }
+            } else {
+                vSelf.client.emitWithAck(path, service, data).timingOut(after: vSelf.timeout) { data in
+                    vSelf.handleEmitResponse(data: data, observer: observer)
+                }
+            }
+        }
+    }
+    /// Emit data to a given path for a given service with id and query.
+    ///
+    /// - Parameters:
+    ///   - path: Path to emit on.
+    ///   - service: Service to emit to.
+    ///   - id: id of the resource.
+    ///   - query: The associated query.
+    ///   - completion: Completion callback.
+    private func emit(to path: String, for service: String, with id: SocketData, and query: SocketData) -> SignalProducer<Response, AnyFeathersError> {
+        return SignalProducer { [weak self] observer, disposable in
+            guard let vSelf = self else {
+                observer.sendInterrupted()
+                return
+            }
+            if vSelf.client.status == .connecting {
+                vSelf.client.once("connect") { _,_  in
+                    vSelf.client.emitWithAck(path, service, id, query).timingOut(after: vSelf.timeout) { data in
+                        vSelf.handleEmitResponse(data: data, observer: observer)
+                    }
+                }
+            } else {
+                vSelf.client.emitWithAck(path, service, id, query).timingOut(after: vSelf.timeout) { data in
+                    vSelf.handleEmitResponse(data: data, observer: observer)
+                }
+            }
+        }
+    }
+    
+    /// Emit data to a given path for a given service with id, data and query.
+    ///
+    /// - Parameters:
+    ///   - path: Path to emit on.
+    ///   - service: Service to emit to.
+    ///   - id: id of the resource.
+    ///   - data: Data to emit.
+    ///   - query: The associated query.
+    ///   - completion: Completion callback.
+    private func emit(to path: String, for service: String, with id: SocketData, and data: SocketData, and query: SocketData) -> SignalProducer<Response, AnyFeathersError> {
+        return SignalProducer { [weak self] observer, disposable in
+            guard let vSelf = self else {
+                observer.sendInterrupted()
+                return
+            }
+            if vSelf.client.status == .connecting {
+                vSelf.client.once("connect") { _,_  in
+                    vSelf.client.emitWithAck(path, service, id, data, query).timingOut(after: vSelf.timeout) { data in
+                        vSelf.handleEmitResponse(data: data, observer: observer)
+                    }
+                }
+            } else {
+                vSelf.client.emitWithAck(path, service, id, data, query).timingOut(after: vSelf.timeout) { data in
+                    vSelf.handleEmitResponse(data: data, observer: observer)
+                }
+            }
+        }
+    }
+    
     /// Emit data to a given path.
     ///
     /// - Parameters:
@@ -94,29 +187,30 @@ public final class SocketProvider: Provider {
             if vSelf.client.status == .connecting {
                 vSelf.client.once("connect") { _,_  in
                     vSelf.client.emitWithAck(path, data).timingOut(after: vSelf.timeout) { data in
-                        let result = vSelf.handleResponseData(data: data)
-                        if let error = result.error {
-                            observer.send(error: error)
-                        } else if let response = result.value {
-                            observer.send(value: response)
-                        } else {
-                            observer.send(error: AnyFeathersError(FeathersNetworkError.unknown))
-                        }
+                        vSelf.handleEmitResponse(data: data, observer: observer)
                     }
                 }
             } else {
                 vSelf.client.emitWithAck(path, data).timingOut(after: vSelf.timeout) { data in
-                    let result = vSelf.handleResponseData(data: data)
-                    if let error = result.error {
-                        observer.send(error: error)
-                    } else if let response = result.value {
-                        observer.send(value: response)
-                    } else {
-                        observer.send(error: AnyFeathersError(FeathersNetworkError.unknown))
-                    }
+                    vSelf.handleEmitResponse(data: data, observer: observer)
                 }
             }
-
+        }
+    }
+    
+    /// Handle the response from an emitted event.
+    ///
+    /// - Parameters:
+    ///   - data: Data received.
+    ///   - observer: Observer to send result to.
+    private func handleEmitResponse(data: [Any], observer: Signal<Response, AnyFeathersError>.Observer) {
+        let result = self.handleResponseData(data: data)
+        if let error = result.error {
+            observer.send(error: error)
+        } else if let response = result.value {
+            observer.send(value: response)
+        } else {
+            observer.send(error: AnyFeathersError(FeathersNetworkError.unknown))
         }
     }
 
@@ -205,25 +299,25 @@ public final class SocketProvider: Provider {
 
 fileprivate extension Service.Method {
 
-    fileprivate var socketRequestPath: String {
+    var socketRequestPath: String {
         switch self {
         case .find: return "find"
         case .get: return "get"
         case .create: return "create"
         case .update: return "update"
         case .patch: return "patch"
-        case .remove: return "removed"
+        case .remove: return "remove"
         }
     }
 
-    fileprivate var socketData: [SocketData?] {
+    var socketData: [SocketData?] {
         switch self {
         case .find(let query):
             return [query?.serialize() ?? [:]]
         case .get(let id, let query):
             return [id, query?.serialize() ?? [:]]
-        case .create(let data, let query):
-            return [data, query?.serialize() ?? [:]]
+        case .create(let data):
+            return [data]
         case .update(let id, let data, let query),
              .patch(let id, let data, let query):
             return [id ?? nil, data, query?.serialize() ?? [:]]
