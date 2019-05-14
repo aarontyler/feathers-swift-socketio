@@ -7,9 +7,9 @@ Pod::Spec.new do |s|
                    SocketIO provider for FeathersSwift for making real-time connections to a
                    FeathersJS backend.
                    DESC
-  s.homepage     = "https://github.com/feathersjs/feathers-swift-socketio"
+  s.homepage     = "https://github.com/aarontyler/feathers-swift-socketio"
   s.license      = { :type => "MIT", :file => "LICENSE" }
-  s.author       = "startupthekid"
+  s.author       = "aarontyler"
 
   s.ios.deployment_target = "8.0"
   s.osx.deployment_target = "10.10"
